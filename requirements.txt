@@ -47,7 +47,7 @@ httptools==0.7.1
     # via uvicorn
 httpx==0.28.1
     # via worldcup-pool
-idna==3.11
+idna==3.15
     # via
     #   anyio
     #   httpx
