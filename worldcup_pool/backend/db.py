@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from contextlib import contextmanager
@@ -24,6 +25,7 @@ _cached: dict[str, Any] = {
 # Sessionmaker bound to the current engine (rebuilt when engine is disposed).
 _session_factory: sessionmaker | None = None
 _session_factory_engine_id: int | None = None
+_log = logging.getLogger(__name__)
 
 
 def _pool_kwargs() -> dict[str, Any]:
@@ -54,7 +56,7 @@ def _refresh_engine_if_needed() -> Engine:
     if not settings.lakebase_endpoint:
         raise RuntimeError(
             "LAKEBASE_ENDPOINT is not set. Set full endpoint name, e.g. "
-            "projects/my-pool/branches/production/endpoints/ep-primary"
+            "projects/worldcup-pool/branches/production/endpoints/primary"
         )
 
     now = time.time()
@@ -401,5 +403,16 @@ def init_schema() -> None:
         for stmt in ddl.split(";"):
             s = stmt.strip()
             if s:
-                conn.execute(text(s))
+                try:
+                    conn.execute(text(s))
+                except Exception as exc:
+                    # In shared/provisioned environments, an existing table or index may
+                    # be owned by a different principal. Skip only those ownership failures
+                    # so remaining tables (e.g. pool_config) can still be initialized.
+                    msg = str(exc).lower()
+                    if "must be owner of table" in msg or "must be owner of relation" in msg:
+                        conn.rollback()
+                        _log.warning("Skipping ownership-protected DDL during init_schema: %s", s)
+                        continue
+                    raise
         conn.commit()

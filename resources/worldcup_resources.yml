@@ -16,67 +16,41 @@ resources:
         # Every 5 minutes so live scores and newly published knockout fixtures appear quickly.
         quartz_cron_expression: "0 0/5 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: sync_matches_env
+          spec:
+            environment_version: "5"
+            dependencies:
+              - databricks-sdk>=0.81.0
+              - sqlalchemy>=2.0.0
+              - psycopg[binary]>=3.2.0
+              - httpx>=0.27.0
+        - environment_key: lakebase_to_delta_env
+          spec:
+            environment_version: "5"
+            dependencies:
+              - databricks-sdk>=0.81.0
+              - sqlalchemy>=2.0.0
+              - psycopg[binary]>=3.2.0
       tasks:
         - task_key: sync_matches
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "Standard_D4s_v3"
-            num_workers: 0
-            spark_conf:
-              spark.databricks.cluster.profile: singleNode
-              spark.master: "local[*]"
-            custom_tags:
-              ResourceClass: SingleNode
-            spark_env_vars:
-              LAKEBASE_ENDPOINT: "${var.lakebase_endpoint}"
-              FOOTBALL_DATA_COMPETITION: "${var.football_data_competition}"
-              LAKEBASE_DATABASE: "databricks_postgres"
-              PREDICTION_LOCK_BEFORE_KICKOFF_HOURS: "1"
-              FOOTBALL_DATA_TOKEN: "{{secrets/worldcup_pool/football_data_token}}"
-          libraries:
-            - pypi:
-                package: "databricks-sdk>=0.81.0"
-            - pypi:
-                package: "sqlalchemy>=2.0.0"
-            - pypi:
-                package: "psycopg[binary]>=3.2.0"
-            - pypi:
-                package: "httpx>=0.27.0"
+          environment_key: sync_matches_env
           spark_python_task:
             python_file: ../scripts/databricks_sync.py
+            parameters:
+              - "LAKEBASE_ENDPOINT=${var.lakebase_endpoint}"
+              - "FOOTBALL_DATA_COMPETITION=${var.football_data_competition}"
+              - "LAKEBASE_DATABASE=databricks_postgres"
+              - "PREDICTION_LOCK_BEFORE_KICKOFF_HOURS=1"
 
-        # Lakebase → UC Delta mirror for the AI/BI dashboard + Genie demo.
-        # Runs after sync_matches so the snapshot is consistent with the latest
-        # scorelines, on a separate single-user UC-enabled cluster (the sync
-        # task's cluster runs without UC access mode by default).
-        # UC-enabled single-node cluster. Must use SINGLE_USER access mode to
-        # write Delta into Unity Catalog; do NOT also set spark.master=local[*]
-        # or data_security_mode:NONE — that combo fails workspace-file
-        # validation pre-run on 15.4 LTS. DBR configures the single-node driver
-        # itself when num_workers=0 + singleNode profile.
         - task_key: lakebase_to_delta
           depends_on:
             - task_key: sync_matches
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "Standard_D4s_v3"
-            num_workers: 0
-            data_security_mode: SINGLE_USER
-            spark_conf:
-              spark.databricks.cluster.profile: singleNode
-            custom_tags:
-              ResourceClass: SingleNode
-            spark_env_vars:
-              LAKEBASE_ENDPOINT: "${var.lakebase_endpoint}"
-              LAKEBASE_DATABASE: "databricks_postgres"
-              DEMO_CATALOG: "${var.demo_catalog}"
-              DEMO_SCHEMA: "${var.demo_schema}"
-          libraries:
-            - pypi:
-                package: "databricks-sdk>=0.81.0"
-            - pypi:
-                package: "sqlalchemy>=2.0.0"
-            - pypi:
-                package: "psycopg[binary]>=3.2.0"
+          environment_key: lakebase_to_delta_env
           spark_python_task:
             python_file: ../scripts/databricks_lakebase_to_delta.py
+            parameters:
+              - "LAKEBASE_ENDPOINT=${var.lakebase_endpoint}"
+              - "LAKEBASE_DATABASE=databricks_postgres"
+              - "DEMO_CATALOG=${var.demo_catalog}"
+              - "DEMO_SCHEMA=${var.demo_schema}"

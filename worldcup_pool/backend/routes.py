@@ -930,9 +930,7 @@ def list_worldcup_players(q: str = "", _user: UserContext = Depends(get_user_con
     settings = get_settings()
     comp = (settings.football_data_competition or "WC").strip()
     rows = get_worldcup_player_directory(settings.football_data_token, comp)
-    if not (q or "").strip():
-        rows = rows[:800]
-    else:
+    if (q or "").strip():
         rows = filter_player_directory(rows, q, limit=200)
     return [WorldcupPlayerOut(**r) for r in rows]
 
@@ -1145,11 +1143,26 @@ def dev_seed_demo(user: UserContext = Depends(get_user_context)):
 # ── Pool config (custom logo / branding) ───────────────────────────
 
 
+def _ensure_pool_config_table(session: Session) -> None:
+    # Keep pool customization endpoints resilient even if background schema init
+    # did not finish yet.
+    session.execute(text("""
+        CREATE TABLE IF NOT EXISTS pool_config (
+            id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            custom_logo TEXT,
+            pool_name TEXT,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """))
+    session.execute(text("INSERT INTO pool_config (id) VALUES (1) ON CONFLICT DO NOTHING"))
+
+
 @router.get("/pool-config", response_model=PoolConfigOut, operation_id="getPoolConfig")
 def get_pool_config(_user: UserContext = Depends(get_user_context)):
     """Public pool configuration (custom logo, pool name)."""
     with session_scope() as session:
         try:
+            _ensure_pool_config_table(session)
             row = session.execute(text("SELECT custom_logo, pool_name FROM pool_config WHERE id = 1")).one_or_none()
         except Exception:
             session.rollback()
@@ -1172,6 +1185,7 @@ def put_pool_config(
         raise HTTPException(400, "Logo must be a data:image/* URL (upload an image file)")
     name = (body.pool_name or "").strip() or None
     with session_scope() as session:
+        _ensure_pool_config_table(session)
         session.execute(text("""
             INSERT INTO pool_config (id, custom_logo, pool_name, updated_at)
             VALUES (1, :logo, :name, NOW())

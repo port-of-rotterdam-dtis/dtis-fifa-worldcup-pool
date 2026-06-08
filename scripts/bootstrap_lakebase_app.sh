@@ -21,7 +21,7 @@ set -euo pipefail
 
 TARGET="${1:-dev}"
 shift || true
-PROFILE="${DATABRICKS_PROFILE:-DEFAULT}"
+PROFILE="prod-consumer"
 
 for cmd in databricks jq psql; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "ERROR: $cmd is required" >&2; exit 1; }

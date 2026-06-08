@@ -53,16 +53,30 @@ _CRED_LOCK = threading.Lock()
 _engine_cache: dict[str, Any] = {"engine": None, "exp": 0.0, "endpoint": None}
 
 
+def _runtime_value(name: str, default: str = "") -> str:
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+    prefix = f"{name}="
+    alt_prefix = f"--{name}="
+    for arg in sys.argv[1:]:
+        if arg.startswith(prefix):
+            return arg[len(prefix):].strip()
+        if arg.startswith(alt_prefix):
+            return arg[len(alt_prefix):].strip()
+    return default
+
+
 def _get_engine():
-    override = os.environ.get("DATABASE_URL_OVERRIDE", "").strip()
+    override = _runtime_value("DATABASE_URL_OVERRIDE")
     if override:
         return create_engine(override, pool_pre_ping=True)
 
-    endpoint = os.environ.get("LAKEBASE_ENDPOINT", "").strip()
+    endpoint = _runtime_value("LAKEBASE_ENDPOINT")
     if not endpoint:
         raise RuntimeError("LAKEBASE_ENDPOINT or DATABASE_URL_OVERRIDE required")
 
-    dbname = os.environ.get("LAKEBASE_DATABASE", "databricks_postgres")
+    dbname = _runtime_value("LAKEBASE_DATABASE", "databricks_postgres")
     now = time.time()
     with _CRED_LOCK:
         if _engine_cache["engine"] and now < _engine_cache["exp"] - 120 and _engine_cache["endpoint"] == endpoint:
@@ -172,7 +186,7 @@ def _fetch_matches(token: str, competition: str) -> list[dict[str, Any]]:
         )
         r.raise_for_status()
         data = r.json()
-        lock_h = int(os.environ.get("PREDICTION_LOCK_BEFORE_KICKOFF_HOURS", "1").strip() or "1")
+        lock_h = int(_runtime_value("PREDICTION_LOCK_BEFORE_KICKOFF_HOURS", "1") or "1")
         lock_h = max(1, min(168, lock_h))
         for m in data.get("matches") or []:
             nm = normalize_match(m, competition)
@@ -200,11 +214,26 @@ def _fetch_matches(token: str, competition: str) -> list[dict[str, Any]]:
     return out
 
 
+def _get_football_token() -> str:
+    """Read token from env/argv (local dev) or Databricks secret scope (cluster)."""
+    t = _runtime_value("FOOTBALL_DATA_TOKEN")
+    if t:
+        return t
+    # On Databricks: fetch directly from secret scope via SDK
+    try:
+        import base64
+        from databricks.sdk import WorkspaceClient
+        secret = WorkspaceClient().secrets.get_secret("worldcup_pool", "football_data_token")
+        return base64.b64decode(secret.value).decode()
+    except Exception:
+        return ""
+
+
 def main() -> None:
-    token = os.environ.get("FOOTBALL_DATA_TOKEN", "").strip()
+    token = _get_football_token()
     if not token:
         raise SystemExit("FOOTBALL_DATA_TOKEN is required for sync job")
-    comp = os.environ.get("FOOTBALL_DATA_COMPETITION", "WC").strip()
+    comp = _runtime_value("FOOTBALL_DATA_COMPETITION", "WC")
 
     engine = _get_engine()
     _init_schema(engine)

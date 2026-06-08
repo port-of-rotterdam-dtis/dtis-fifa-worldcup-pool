@@ -135,7 +135,7 @@ databricks bundle run worldcup_pool_app -t dev
 
 The Lakebase endpoint defaults to `projects/worldcup-pool/branches/production/endpoints/primary`. Override with:
 ```bash
-databricks bundle deploy -t dev --var lakebase_endpoint="projects/YOUR_PROJECT/branches/production/endpoints/primary"
+databricks bundle deploy -t dev --var lakebase_endpoint="projects/worldcup-pool/branches/production/endpoints/primary"
 ```
 
 > **Create a Lakebase project first** if you don't have one yet: in the Databricks UI, go to **Catalog > Lakebase > Create project**.
@@ -186,7 +186,7 @@ Three targets ship in `databricks.yml`. Pick the one that matches what you're do
 
 **`prod`** is mostly a naming convention — it deploys an app called `worldcup-pool-prod` (separate URL from `-dev`) and runs under Databricks Asset Bundle `production` mode. As shipped, that mode mainly affects bundle-side validation (rejects deploys to per-user paths, requires `run_as` on jobs) — it doesn't restrict who can update the app or lock down the deployment. The real value is just having two side-by-side namespaces: a stable URL you share with your team, and a scratch URL for trying changes without breaking the first one. **If you're not iterating on the code, you don't need `prod` at all — `dev` is fine as your live pool.** If you do want stronger production guardrails (workspace path locking, permissions, service-principal `run_as`), add them to the `prod` target yourself.
 
-All three targets accept `--var lakebase_endpoint=projects/<your-project>/branches/<your-branch>/endpoints/primary` to point at your own Lakebase project. The defaults in `databricks.yml` use placeholder values that you'll need to override.
+All three targets default to `projects/worldcup-pool/branches/production/endpoints/primary`.
 
 ## Architecture
 

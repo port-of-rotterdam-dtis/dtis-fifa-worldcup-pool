@@ -41,21 +41,35 @@ _CRED_LOCK = threading.Lock()
 _engine_cache: dict[str, Any] = {"engine": None, "exp": 0.0, "endpoint": None}
 
 
+def _runtime_value(name: str, default: str = "") -> str:
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+    prefix = f"{name}="
+    alt_prefix = f"--{name}="
+    for arg in sys.argv[1:]:
+        if arg.startswith(prefix):
+            return arg[len(prefix):].strip()
+        if arg.startswith(alt_prefix):
+            return arg[len(alt_prefix):].strip()
+    return default
+
+
 def _get_engine():
     """Build a SQLAlchemy engine using the same OAuth pattern as the app.
 
     Token lives ~1h; we refresh early (3300s cushion) to keep long-running jobs
     safe. `DATABASE_URL_OVERRIDE` bypasses Lakebase for local dev.
     """
-    override = os.environ.get("DATABASE_URL_OVERRIDE", "").strip()
+    override = _runtime_value("DATABASE_URL_OVERRIDE")
     if override:
         return create_engine(override, pool_pre_ping=True)
 
-    endpoint = os.environ.get("LAKEBASE_ENDPOINT", "").strip()
+    endpoint = _runtime_value("LAKEBASE_ENDPOINT")
     if not endpoint:
         raise RuntimeError("LAKEBASE_ENDPOINT or DATABASE_URL_OVERRIDE required")
 
-    dbname = os.environ.get("LAKEBASE_DATABASE", "databricks_postgres")
+    dbname = _runtime_value("LAKEBASE_DATABASE", "databricks_postgres")
     now = time.time()
     with _CRED_LOCK:
         if (
@@ -194,8 +208,8 @@ def _copy_table(
 
 
 def main() -> None:
-    catalog = (os.environ.get("DEMO_CATALOG") or "main").strip() or "main"
-    schema = (os.environ.get("DEMO_SCHEMA") or "worldcup_pool").strip() or "worldcup_pool"
+    catalog = _runtime_value("DEMO_CATALOG", "main") or "main"
+    schema = _runtime_value("DEMO_SCHEMA", "worldcup_pool") or "worldcup_pool"
 
     spark = SparkSession.builder.getOrCreate()
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
