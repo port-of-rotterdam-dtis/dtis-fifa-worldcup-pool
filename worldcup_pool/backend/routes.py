@@ -190,7 +190,13 @@ def _validate_profile_picture(value: str | None) -> str | None:
     if v is None:
         return None
     if len(v) > 1_500_000:
-        raise HTTPException(status_code=400, detail="Profile picture is too large")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Profile picture is too large. Please upload an image under 1 MB — "
+                "try compressing it or resizing to around 256×256 pixels, then save again."
+            ),
+        )
     if v.startswith("data:image/"):
         return v
     raise HTTPException(status_code=400, detail="Profile picture must be an uploaded image")
@@ -932,6 +938,9 @@ def list_worldcup_players(q: str = "", _user: UserContext = Depends(get_user_con
     rows = get_worldcup_player_directory(settings.football_data_token, comp)
     if (q or "").strip():
         rows = filter_player_directory(rows, q, limit=200)
+    # else: return the full directory. The client loads it once and filters in-browser,
+    # so every squad must be present — a row cap here silently drops late-alphabet nations
+    # (Spain, Sweden, USA, Uruguay, Uzbekistan, ...) once the directory exceeds the cap.
     return [WorldcupPlayerOut(**r) for r in rows]
 
 
